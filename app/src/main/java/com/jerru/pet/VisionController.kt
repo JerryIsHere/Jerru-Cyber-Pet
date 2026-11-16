@@ -13,7 +13,11 @@ import com.google.mlkit.vision.face.FaceDetectorOptions
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
-class VisionController(private val service: OverlayService, private val state: JerruStateMachine) {
+class VisionController(
+    private val service: OverlayService,
+    private val state: JerruStateMachine,
+    private val onFailure: () -> Unit
+) {
     private val executor = Executors.newSingleThreadExecutor()
     private val detector = FaceDetection.getClient(
         FaceDetectorOptions.Builder()
@@ -42,6 +46,7 @@ class VisionController(private val service: OverlayService, private val state: J
                 provider?.bindToLifecycle(service, CameraSelector.DEFAULT_FRONT_CAMERA, useCase)
             } catch (_: Exception) {
                 state.clearFace()
+                onFailure()
             }
         }, ContextCompat.getMainExecutor(service))
     }

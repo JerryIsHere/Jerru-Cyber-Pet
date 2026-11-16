@@ -13,6 +13,7 @@ import android.os.PowerManager
 import android.provider.Settings
 import android.view.Gravity
 import android.view.WindowManager
+import android.widget.Toast
 import androidx.lifecycle.LifecycleService
 import kotlin.math.sin
 
@@ -92,7 +93,13 @@ class OverlayService : LifecycleService() {
             ACTION_VISION_ON -> if (vision == null) {
                 try {
                     foreground(true)
-                    vision = VisionController(this, state).also { it.start() }
+                    vision = VisionController(this, state) {
+                        vision?.stop()
+                        vision = null
+                        state.clearFace()
+                        foreground(false)
+                        Toast.makeText(this, "Front camera unavailable", Toast.LENGTH_LONG).show()
+                    }.also { it.start() }
                 } catch (_: SecurityException) {
                     foreground(false)
                 }
@@ -134,7 +141,7 @@ class OverlayService : LifecycleService() {
         if (now - lastPositionUpdate < 32) return
         lastPositionUpdate = now
         if (now - lastMusicUpdate >= 1000) {
-            state.musicPlaying = getSystemService(AudioManager::class.java).isMusicActive
+            this.state.musicPlaying = getSystemService(AudioManager::class.java).isMusicActive
             lastMusicUpdate = now
         }
         val layout = params ?: return
