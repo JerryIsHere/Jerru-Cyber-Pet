@@ -79,6 +79,10 @@ class JerruEyeView(
                 else -> Unit
             }
         }
+        if (state.sweating) {
+            paint.color = Color.rgb(0, 229, 255)
+            canvas.drawOval(w * 0.88f, h * 0.25f, w * 0.93f, h * 0.42f, paint)
+        }
         onFrame(state, now)
         postInvalidateOnAnimation()
     }

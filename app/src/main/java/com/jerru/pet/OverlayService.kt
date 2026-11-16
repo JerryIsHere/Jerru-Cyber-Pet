@@ -50,7 +50,7 @@ class OverlayService : LifecycleService() {
         }
         if (intent?.action == ACTION_VISION_OFF && eyeView == null) {
             stopSelf()
-            return START_NOT_STICKY
+            return START_STICKY
         }
         if (!Settings.canDrawOverlays(this)) {
             stopSelf()

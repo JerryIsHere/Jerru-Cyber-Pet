@@ -14,7 +14,8 @@ data class EyeState(
     val lookY: Float = 0f,
     val blink: Float = 0f,
     val roaming: Boolean = false,
-    val bedtime: Boolean = false
+    val bedtime: Boolean = false,
+    val sweating: Boolean = false
 )
 
 class JerruStateMachine {
@@ -35,6 +36,7 @@ class JerruStateMachine {
     private var faceExpression = Expression.NORMAL
     private var faceX = 0f
     private var yawnUntil = 0L
+    private var smugUntil = 0L
     var charging = false
     var lowBattery = false
     var hot = false
@@ -59,6 +61,7 @@ class JerruStateMachine {
             idleX = Random.nextFloat() * 2f - 1f
             idleY = if (Random.nextBoolean()) 0.65f else Random.nextFloat() - 0.5f
             if (idle >= 5000 && Random.nextInt(5) == 0) yawnUntil = now + 1200
+            if (idle >= 5000 && Random.nextInt(5) == 0) smugUntil = now + 2000
             nextLook = now + Random.nextLong(5000, 30001)
         }
         if (now >= nextBlink) {
@@ -77,6 +80,7 @@ class JerruStateMachine {
             now < faceUntil -> faceExpression
             lowBattery -> Expression.TIRED
             now < yawnUntil -> Expression.SURPRISED
+            now < smugUntil -> Expression.SMUG
             else -> Expression.NORMAL
         }
         val color = when {
@@ -92,7 +96,7 @@ class JerruStateMachine {
             expression, color,
             if (now < faceUntil && faceExpression == Expression.ANGRY) faceX else (tiltX + if (idle >= 5000) idleX else 0f).coerceIn(-1f, 1f),
             (tiltY + if (idle >= 5000) idleY else 0f).coerceIn(-1f, 1f),
-            blink, idle >= 60000 && screenOn && !dark, bedtime
+            blink, idle >= 60000 && screenOn && !dark, bedtime, hot
         )
     }
 }
