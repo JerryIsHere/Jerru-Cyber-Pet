@@ -8,6 +8,23 @@ Cần JDK 17 và Android SDK 35. Chạy `./gradlew assembleDebug`; APK nằm t�
 `app/build/outputs/apk/debug/app-debug.apk`. GitHub Actions cũng build và tải
 artifact `Jerru.apk` cho mỗi lần push.
 
+### Tải APK trực tiếp (khuyên dùng)
+
+Mỗi lần push lên `main`, workflow cập nhật bản phát hành **latest**. Vào mục
+**Releases** của repo và tải `Jerru.apk`, hoặc dùng liên kết trực tiếp:
+`https://github.com/JerryIsHere/Jerru-Cyber-Pet/releases/latest/download/Jerru.apk`
+(chạy `gh release download latest -p Jerru.apk` nếu dùng GitHub CLI).
+
+### Tải APK từ GitHub Actions
+
+1. Vào tab **Actions** của repo, chọn workflow **Android build** rồi mở lần chạy
+   thành công mới nhất (có thể bấm **Run workflow** để chạy thủ công).
+2. Kéo xuống mục **Artifacts** và bấm `Jerru.apk` để tải về file zip, sau đó giải nén
+   để lấy `Jerru.apk`.
+3. Hoặc dùng GitHub CLI: `gh run download <run-id> -n Jerru.apk`.
+
+Artifact hết hạn sau 90 ngày (mặc định); cần đăng nhập GitHub để tải.
+
 ## Sử dụng
 
 1. Mở ứng dụng, chọn **Allow overlay** và cấp quyền hiển thị trên ứng dụng khác.
