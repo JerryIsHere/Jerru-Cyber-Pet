@@ -69,9 +69,9 @@ class VisionController(
                             val face = faces.sortedByDescending { it.boundingBox.width() * it.boundingBox.height() }[1]
                             val width = if (frame.imageInfo.rotationDegrees % 180 == 0) frame.width else frame.height
                             val x = 1f - 2f * face.boundingBox.exactCenterX() / width.coerceAtLeast(1)
-                            state.face(Expression.ANGRY, x)
+                            state.face(JerruExpression.ANGRY, x)
                         }
-                        faces.firstOrNull()?.smilingProbability?.let { it > 0.7f } == true -> state.face(Expression.HAPPY, 0f)
+                        faces.firstOrNull()?.smilingProbability?.let { it > 0.7f } == true -> state.face(JerruExpression.HAPPY, 0f)
                         else -> state.clearFace()
                     }
                 }

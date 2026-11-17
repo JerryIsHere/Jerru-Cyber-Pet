@@ -1,42 +1,32 @@
 package com.jerru.pet
 
-import android.graphics.Color
 import android.os.SystemClock
-import kotlin.math.sin
+import kotlin.math.abs
 import kotlin.random.Random
 
-enum class Expression { NORMAL, HAPPY, ANGRY, TIRED, SURPRISED, DIZZY, SMUG, SLEEPING }
+enum class JerruExpression { NORMAL, HAPPY, SAD, ANGRY, SURPRISED, TIRED, SQUINT, CURIOUS, DIZZY }
 
 data class EyeState(
-    val expression: Expression = Expression.NORMAL,
-    val color: Int = Color.rgb(0, 229, 255),
+    val expression: JerruExpression = JerruExpression.NORMAL,
     val lookX: Float = 0f,
     val lookY: Float = 0f,
     val blink: Float = 0f,
-    val roaming: Boolean = false,
-    val bedtime: Boolean = false,
-    val sweating: Boolean = false
+    val emerge: Float = 0f
 )
 
-class JerruStateMachine {
-    private val cyan = Color.rgb(0, 229, 255)
-    private val red = Color.rgb(255, 23, 68)
-    private val green = Color.rgb(0, 255, 102)
-    private val amber = Color.rgb(255, 179, 0)
-    private val purple = Color.rgb(213, 0, 249)
-    private val slate = Color.rgb(84, 110, 122)
-    private var lastInteraction = SystemClock.elapsedRealtime()
-    private var nextLook = lastInteraction + 5000
-    private var nextBlink = lastInteraction + 3000
+class JerruStateMachine(initialTime: Long = SystemClock.elapsedRealtime()) {
+    private var nextLook = initialTime + 2000
+    private var nextBlink = initialTime + 3000
     private var blinkStart = 0L
     private var idleX = 0f
     private var idleY = 0f
     private var dizzyUntil = 0L
     private var faceUntil = 0L
-    private var faceExpression = Expression.NORMAL
+    private var faceExpression = JerruExpression.NORMAL
     private var faceX = 0f
-    private var yawnUntil = 0L
-    private var smugUntil = 0L
+    private var brightSince: Long? = null
+    private var emergeStart: Long? = null
+    private var nextEmergeDelay = Random.nextLong(10_000, 15_001)
     var charging = false
     var lowBattery = false
     var hot = false
@@ -44,25 +34,36 @@ class JerruStateMachine {
     var tiltX = 0f
     var tiltY = 0f
     var screenOn = true
-    var musicPlaying = false
 
-    fun interact() { lastInteraction = SystemClock.elapsedRealtime() }
+    fun interact() { nextLook = SystemClock.elapsedRealtime() + 2000 }
     fun shake() { dizzyUntil = SystemClock.elapsedRealtime() + 4000 }
-    fun face(expression: Expression, x: Float) {
+    fun face(expression: JerruExpression, x: Float) {
         faceExpression = expression
         faceX = x.coerceIn(-1f, 1f)
         faceUntil = SystemClock.elapsedRealtime() + 2500
     }
     fun clearFace() { faceUntil = 0L }
 
-    fun update(now: Long = SystemClock.elapsedRealtime(), hour: Int): EyeState {
-        val idle = now - lastInteraction
+    fun darkZoneAvailable(available: Boolean, now: Long) {
+        if (available) {
+            brightSince = null
+            emergeStart = null
+            nextEmergeDelay = Random.nextLong(10_000, 15_001)
+        } else if (brightSince == null) {
+            brightSince = now
+        }
+    }
+
+    fun resetDarkZone() {
+        brightSince = null
+        emergeStart = null
+    }
+
+    fun update(now: Long = SystemClock.elapsedRealtime()): EyeState {
         if (now >= nextLook) {
             idleX = Random.nextFloat() * 2f - 1f
-            idleY = if (Random.nextBoolean()) 0.65f else Random.nextFloat() - 0.5f
-            if (idle >= 5000 && Random.nextInt(5) == 0) yawnUntil = now + 1200
-            if (idle >= 5000 && Random.nextInt(5) == 0) smugUntil = now + 2000
-            nextLook = now + Random.nextLong(5000, 30001)
+            idleY = Random.nextFloat() - 0.5f
+            nextLook = now + Random.nextLong(1800, 5000)
         }
         if (now >= nextBlink) {
             blinkStart = now
@@ -70,33 +71,41 @@ class JerruStateMachine {
         }
         val blinkTime = now - blinkStart
         val blink = if (blinkStart > 0 && blinkTime in 0..240) {
-            1f - kotlin.math.abs(blinkTime - 120f) / 120f
+            1f - abs(blinkTime - 120f) / 120f
         } else 0f
-        val bedtime = idle >= 60000 && screenOn && hour in 1..4
-        val expression = when {
-            hot || (now < faceUntil && faceExpression == Expression.ANGRY) || bedtime -> Expression.ANGRY
-            now < dizzyUntil -> Expression.DIZZY
-            dark -> Expression.SLEEPING
-            now < faceUntil -> faceExpression
-            lowBattery -> Expression.TIRED
-            now < yawnUntil -> Expression.SURPRISED
-            now < smugUntil -> Expression.SMUG
-            else -> Expression.NORMAL
+        val brightStart = brightSince
+        if (screenOn && brightStart != null && emergeStart == null && now - brightStart >= nextEmergeDelay) {
+            emergeStart = now
         }
-        val color = when {
-            expression == Expression.ANGRY -> red
-            dark || lowBattery -> slate
-            charging -> green
-            now - JerruNotificationListener.lastNotification in 0..5000 -> amber
-            musicPlaying -> purple
-            idle >= 5000 -> Color.HSVToColor(floatArrayOf((now / 35f) % 360f, 0.8f, 0.85f + 0.15f * sin(now / 600.0).toFloat()))
-            else -> cyan
+        var elapsed = emergeStart?.let { now - it }
+        if (elapsed != null && elapsed >= 4500) {
+            emergeStart = null
+            brightSince = now
+            nextEmergeDelay = Random.nextLong(10_000, 15_001)
+            elapsed = null
+        }
+        val emerge = if (!screenOn || elapsed == null) 0f else when {
+            elapsed < 500 -> elapsed / 500f
+            elapsed > 4000 -> (4500 - elapsed) / 500f
+            else -> 1f
+        }
+        val expression = when {
+            now < dizzyUntil -> JerruExpression.DIZZY
+            hot -> JerruExpression.ANGRY
+            dark || lowBattery -> JerruExpression.TIRED
+            now < faceUntil -> faceExpression
+            charging -> JerruExpression.HAPPY
+            emerge > 0f -> if (elapsed != null && elapsed > 2200) JerruExpression.HAPPY else JerruExpression.CURIOUS
+            JerruNotificationListener.lastNotification >= 0 &&
+                now - JerruNotificationListener.lastNotification in 0..5000 -> JerruExpression.SURPRISED
+            else -> JerruExpression.NORMAL
         }
         return EyeState(
-            expression, color,
-            if (now < faceUntil && faceExpression == Expression.ANGRY) faceX else (tiltX + if (idle >= 5000) idleX else 0f).coerceIn(-1f, 1f),
-            (tiltY + if (idle >= 5000) idleY else 0f).coerceIn(-1f, 1f),
-            blink, idle >= 60000 && screenOn && !dark, bedtime, hot
+            expression,
+            ((if (now < faceUntil) faceX else idleX) + tiltX * 0.3f).coerceIn(-1f, 1f),
+            (idleY + tiltY * 0.3f).coerceIn(-1f, 1f),
+            blink,
+            emerge
         )
     }
 }

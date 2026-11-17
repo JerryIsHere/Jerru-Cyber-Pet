@@ -6,16 +6,11 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.graphics.PixelFormat
-import android.media.AudioManager
 import android.os.Build
 import android.os.PowerManager
-import android.provider.Settings
-import android.view.Gravity
-import android.view.WindowManager
+import android.util.Log
 import android.widget.Toast
 import androidx.lifecycle.LifecycleService
-import kotlin.math.sin
 
 class OverlayService : LifecycleService() {
     companion object {
@@ -27,67 +22,32 @@ class OverlayService : LifecycleService() {
     }
 
     private val state = JerruStateMachine()
-    private lateinit var windowManager: WindowManager
-    private var eyeView: JerruEyeView? = null
-    private var params: WindowManager.LayoutParams? = null
     private var sensors: SensorController? = null
     private var vision: VisionController? = null
-    private var lastPositionUpdate = 0L
-    private var lastMusicUpdate = 0L
 
     override fun onCreate() {
         super.onCreate()
-        val manager = getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(NotificationChannel(CHANNEL, "Jerru companion", NotificationManager.IMPORTANCE_LOW))
-        windowManager = getSystemService(WindowManager::class.java)
+        getSystemService(NotificationManager::class.java).createNotificationChannel(
+            NotificationChannel(CHANNEL, "Jerru companion", NotificationManager.IMPORTANCE_LOW)
+        )
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
-        if (intent?.action == ACTION_STOP) {
+        if (intent?.action == ACTION_STOP || (intent?.action == ACTION_VISION_OFF && sensors == null)) {
             stopSelf()
             return START_NOT_STICKY
         }
-        if (intent?.action == ACTION_VISION_OFF && eyeView == null) {
+        if (Build.VERSION.SDK_INT < 30 || !JerruAccessibilityService.connected) {
+            Toast.makeText(this, "Enable Jerru accessibility service on Android 11 or later", Toast.LENGTH_LONG).show()
             stopSelf()
             return START_NOT_STICKY
         }
-        if (!Settings.canDrawOverlays(this)) {
-            stopSelf()
-            return START_NOT_STICKY
-        }
-        val enableVision = intent?.action == ACTION_VISION_ON
-        try {
-            foreground(enableVision || vision != null)
-        } catch (_: SecurityException) {
-            foreground(false)
-        }
-        if (eyeView == null) {
-            val density = resources.displayMetrics.density
-            val layout = WindowManager.LayoutParams(
-                (150 * density).toInt(), (58 * density).toInt(),
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-                PixelFormat.TRANSLUCENT
-            ).apply {
-                gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-                if (Build.VERSION.SDK_INT >= 28) {
-                    layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-                }
-            }
-            val view = JerruEyeView(this, state, ::positionPet)
-            try {
-                windowManager.addView(view, layout)
-            } catch (_: WindowManager.BadTokenException) {
-                stopSelf()
-                return START_NOT_STICKY
-            }
-            params = layout
-            eyeView = view
+        foreground(vision != null)
+        if (sensors == null) {
             state.screenOn = getSystemService(PowerManager::class.java).isInteractive
             sensors = SensorController(this, state).also { it.start() }
+            JerruAccessibilityService.startPet(state)
         }
         when (intent?.action) {
             ACTION_VISION_ON -> if (vision == null) {
@@ -100,8 +60,10 @@ class OverlayService : LifecycleService() {
                         foreground(false)
                         Toast.makeText(this, "Front camera unavailable", Toast.LENGTH_LONG).show()
                     }.also { it.start() }
-                } catch (_: SecurityException) {
+                } catch (error: SecurityException) {
+                    Log.e("Jerru", "Cannot start camera", error)
                     foreground(false)
+                    Toast.makeText(this, "Camera permission is required", Toast.LENGTH_LONG).show()
                 }
             }
             ACTION_VISION_OFF -> {
@@ -112,7 +74,7 @@ class OverlayService : LifecycleService() {
             }
             ACTION_START -> state.interact()
         }
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     private fun foreground(camera: Boolean) {
@@ -127,9 +89,8 @@ class OverlayService : LifecycleService() {
             .addAction(Notification.Action.Builder(null, "Stop", stop).build())
             .build()
         if (Build.VERSION.SDK_INT >= 34) {
-            val type = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or
-                if (camera) ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA else 0
-            startForeground(1, notification, type)
+            startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or
+                if (camera) ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA else 0)
         } else if (Build.VERSION.SDK_INT >= 30) {
             startForeground(1, notification, if (camera) ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA else 0)
         } else {
@@ -137,54 +98,10 @@ class OverlayService : LifecycleService() {
         }
     }
 
-    private fun positionPet(state: EyeState, now: Long) {
-        if (now - lastPositionUpdate < 32) return
-        lastPositionUpdate = now
-        if (now - lastMusicUpdate >= 1000) {
-            this.state.musicPlaying = getSystemService(AudioManager::class.java).isMusicActive
-            lastMusicUpdate = now
-        }
-        val layout = params ?: return
-        val view = eyeView ?: return
-        val metrics = resources.displayMetrics
-        val maxX = ((metrics.widthPixels - layout.width) / 2).coerceAtLeast(0)
-        val maxY = (metrics.heightPixels - layout.height).coerceAtLeast(0)
-        val x: Int
-        val y: Int
-        if (state.bedtime) {
-            x = 0
-            y = maxY / 2
-        } else if (state.roaming) {
-            val phase = (now % 30000L) / 30000f
-            if (phase < 0.3f) {
-                val progress = phase / 0.3f
-                x = (sin(progress * Math.PI * 3).toFloat() * maxX * progress).toInt()
-                y = (maxY * progress).toInt()
-            } else {
-                val distance = (phase - 0.3f) / 0.7f * (4 * maxX + 2 * maxY)
-                when {
-                    distance < 2 * maxX -> { x = maxX - distance.toInt(); y = maxY }
-                    distance < 2 * maxX + maxY -> { x = -maxX; y = maxY - (distance - 2 * maxX).toInt() }
-                    distance < 4 * maxX + maxY -> { x = -maxX + (distance - 2 * maxX - maxY).toInt(); y = 0 }
-                    else -> { x = maxX; y = (distance - 4 * maxX - maxY).toInt() }
-                }
-            }
-        } else {
-            x = 0
-            y = 0
-        }
-        if (layout.x != x || layout.y != y) {
-            layout.x = x
-            layout.y = y
-            windowManager.updateViewLayout(view, layout)
-        }
-    }
-
     override fun onDestroy() {
+        JerruAccessibilityService.stopPet()
         vision?.stop()
         sensors?.stop()
-        eyeView?.let { windowManager.removeView(it) }
-        eyeView = null
         super.onDestroy()
     }
 }

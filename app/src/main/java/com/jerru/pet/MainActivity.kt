@@ -4,7 +4,6 @@ import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -22,7 +21,7 @@ class MainActivity : Activity() {
             setPadding(32, 32, 32, 32)
         }
         layout.addView(TextView(this).apply {
-            text = "Jerru\nA little companion for your camera cutout."
+            text = "Jerru\nA little companion hiding in dark screen areas."
             textSize = 22f
             gravity = Gravity.CENTER
         })
@@ -32,12 +31,13 @@ class MainActivity : Activity() {
                 setOnClickListener { action() }
             })
         }
-        button("Allow overlay") {
-            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+        button("Enable Jerru accessibility") {
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
         button("Start Jerru") {
-            if (!Settings.canDrawOverlays(this)) {
-                startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+            if (Build.VERSION.SDK_INT < 30 || !JerruAccessibilityService.connected) {
+                android.widget.Toast.makeText(this, "Android 11+ and Jerru accessibility service are required", android.widget.Toast.LENGTH_LONG).show()
+                if (Build.VERSION.SDK_INT >= 30) startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             } else {
                 startPet(OverlayService.ACTION_START)
                 if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -46,8 +46,8 @@ class MainActivity : Activity() {
             }
         }
         button("Enable face reactions") {
-            if (!Settings.canDrawOverlays(this)) {
-                startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+            if (Build.VERSION.SDK_INT < 30 || !JerruAccessibilityService.connected) {
+                android.widget.Toast.makeText(this, "Enable Jerru accessibility service first", android.widget.Toast.LENGTH_LONG).show()
             } else if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(arrayOf(Manifest.permission.CAMERA), 1)
             } else {
@@ -58,7 +58,7 @@ class MainActivity : Activity() {
         button("Notification access") { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
         button("Stop Jerru") { stopService(Intent(this, OverlayService::class.java)) }
         layout.addView(TextView(this).apply {
-            text = "Face reactions use the front camera only after you enable them. Android shows a camera indicator and a foreground notification. No images are saved or uploaded. Notification reactions require separate access in Android settings."
+            text = "Jerru uses accessibility screenshots to find dark areas. Screenshots are analyzed on this device and are never saved or uploaded. Face reactions use the front camera only after you enable them. Android shows a camera indicator and a foreground notification. Camera images are not saved or uploaded."
             setPadding(0, 24, 0, 0)
         })
         setContentView(layout)
@@ -66,7 +66,7 @@ class MainActivity : Activity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == 1 && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED && Settings.canDrawOverlays(this)) {
+        if (requestCode == 1 && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED && JerruAccessibilityService.connected) {
             startPet(OverlayService.ACTION_VISION_ON)
         }
     }
